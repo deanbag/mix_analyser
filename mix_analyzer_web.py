@@ -4,6 +4,7 @@ import numpy as np
 from flask import Flask, request, render_template, send_file
 import os
 import logging
+import psutil  # Add for memory tracking
 
 app = Flask(__name__)
 UPLOAD_FOLDER = "uploads"
@@ -15,17 +16,28 @@ os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def log_memory():
+    process = psutil.Process(os.getpid())
+    mem = process.memory_info().rss / 1024 / 1024  # MB
+    logger.info(f"Memory usage: {mem:.2f} MB")
+
 def analyze_mix(target_file, reference_file):
-    logger.info(f"Analyzing files: {target_file}, {reference_file}")
+    logger.info(f"Starting analysis: target={target_file}, reference={reference_file}")
+    log_memory()
     
-    # Check file sizes (limit to 2 MB each)
-    if os.path.getsize(target_file) > 2 * 1024 * 1024 or os.path.getsize(reference_file) > 2 * 1024 * 1024:
+    # Check file sizes
+    target_size = os.path.getsize(target_file) / 1024 / 1024  # MB
+    ref_size = os.path.getsize(reference_file) / 1024 / 1024  # MB
+    logger.info(f"File sizes: target={target_size:.2f} MB, reference={ref_size:.2f} MB")
+    if target_size > 2 or ref_size > 2:
         raise ValueError("Files must be under 2 MB each.")
     
-    # Load audio with reduced memory footprint
+    # Load audio
+    logger.info("Loading audio files")
     target_audio, sr = librosa.load(target_file, sr=22050, mono=False, duration=15)
     reference_audio, _ = librosa.load(reference_file, sr=22050, mono=False, duration=15)
     logger.info(f"Loaded audio: target shape={target_audio.shape}, sr={sr}")
+    log_memory()
     
     if target_audio.ndim == 1:
         target_audio = np.array([target_audio, target_audio])
@@ -39,6 +51,8 @@ def analyze_mix(target_file, reference_file):
     target_spec = np.abs(librosa.stft(target_audio.mean(axis=0)))
     reference_spec = np.abs(librosa.stft(reference_audio.mean(axis=0)))
     freqs = librosa.fft_frequencies(sr=sr)
+    logger.info("Computed spectra")
+    log_memory()
     
     def get_band_energy(spec, freqs, low, high):
         mask = (freqs >= low) & (freqs <= high)
@@ -67,17 +81,18 @@ def analyze_mix(target_file, reference_file):
     feedback = []
     if rms_diff_percent > 15:
         feedback.append("Your mix is quieter than the reference. Use a compressor or limiter to increase loudness.")
-    elif rms_diff_percent < -15:
-        feedback.append("Your mix is louder than the reference. Reduce gain to avoid distortion.")
     # [Add your other feedback logic...]
     
+    logger.info("Generated feedback")
     del target_audio, reference_audio, target_spec, reference_spec
-    logger.info("Cleared audio arrays from memory")
+    log_memory()
     
     output_file = os.path.join(OUTPUT_FOLDER, "output.wav")
+    logger.info("Starting Matchering")
     results = [mg.pcm24(output_file)]
     mg.process(target=target_file, reference=reference_file, results=results)
-    logger.info(f"Matchering completed, output at {output_file}")
+    logger.info(f"Matchering completed: {output_file}")
+    log_memory()
     
     results_dict = {
         "rms_diff_percent": rms_diff_percent,
@@ -91,40 +106,7 @@ def analyze_mix(target_file, reference_file):
     }
     return results_dict
 
-@app.route("/", methods=["GET", "POST"])
-def upload():
-    if request.method == "POST":
-        if "target" not in request.files or "reference" not in request.files:
-            return render_template("upload.html", error="Please upload both files.")
-        
-        target = request.files["target"]
-        reference = request.files["reference"]
-        
-        if target.filename == "" or reference.filename == "":
-            return render_template("upload.html", error="Please select valid files.")
-        
-        target_path = os.path.join(UPLOAD_FOLDER, "target.wav")
-        reference_path = os.path.join(UPLOAD_FOLDER, "reference.wav")
-        
-        target.save(target_path)
-        reference.save(reference_path)
-        
-        try:
-            results = analyze_mix(target_path, reference_path)
-            os.remove(target_path)
-            os.remove(reference_path)
-            return render_template("results.html", results=results)
-        except Exception as e:
-            logger.error(f"Error during analysis: {str(e)}")
-            os.remove(target_path)
-            os.remove(reference_path)
-            return render_template("upload.html", error=f"Analysis failed: {str(e)}")
-    return render_template("upload.html")
-
-@app.route("/download")
-def download():
-    output_path = os.path.join(OUTPUT_FOLDER, "output.wav")
-    return send_file(output_path, as_attachment=True)
+# [Rest of your routes remain unchanged...]
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)

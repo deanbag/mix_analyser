@@ -3,3 +3,4 @@ matchering
 librosa
 numpy
 gunicorn
+psutil
