@@ -1,31 +1,37 @@
-# mix_analyzer_web.py
 import matchering as mg
 import librosa
 import numpy as np
 from flask import Flask, request, render_template, send_file
 import os
+import logging
 
 app = Flask(__name__)
 UPLOAD_FOLDER = "uploads"
 OUTPUT_FOLDER = "outputs"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
-app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER  # Optional for future use
 
-# Rest of your code (analyze_mix, routes, etc.) follows...
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def analyze_mix(target_file, reference_file):
-    # [Your existing analyze_mix function from before]
-    # Load audio files
-    target_audio, sr = librosa.load(target_file, sr=44100, mono=False)
-    reference_audio, _ = librosa.load(reference_file, sr=44100, mono=False)
+    logger.info(f"Analyzing files: {target_file}, {reference_file}")
+    
+    # Check file sizes (limit to 2 MB each)
+    if os.path.getsize(target_file) > 2 * 1024 * 1024 or os.path.getsize(reference_file) > 2 * 1024 * 1024:
+        raise ValueError("Files must be under 2 MB each.")
+    
+    # Load audio with reduced memory footprint
+    target_audio, sr = librosa.load(target_file, sr=22050, mono=False, duration=15)
+    reference_audio, _ = librosa.load(reference_file, sr=22050, mono=False, duration=15)
+    logger.info(f"Loaded audio: target shape={target_audio.shape}, sr={sr}")
     
     if target_audio.ndim == 1:
         target_audio = np.array([target_audio, target_audio])
     if reference_audio.ndim == 1:
         reference_audio = np.array([reference_audio, reference_audio])
     
-    # Feature Extraction
     target_rms = np.sqrt(np.mean(target_audio**2))
     reference_rms = np.sqrt(np.mean(reference_audio**2))
     rms_diff_percent = (reference_rms - target_rms) / reference_rms * 100
@@ -58,40 +64,22 @@ def analyze_mix(target_file, reference_file):
     reference_peak = np.max(np.abs(reference_audio))
     peak_diff_percent = (reference_peak - target_peak) / reference_peak * 100
     
-    # Generate Feedback
     feedback = []
     if rms_diff_percent > 15:
         feedback.append("Your mix is quieter than the reference. Use a compressor or limiter to increase loudness.")
     elif rms_diff_percent < -15:
         feedback.append("Your mix is louder than the reference. Reduce gain to avoid distortion.")
-    if bass_diff > 20:
-        feedback.append("Your mix lacks bass. Boost frequencies around 20-250 Hz.")
-    elif bass_diff < -20:
-        feedback.append("Too much bass in your mix. Cut around 20-250 Hz.")
-    if mids_diff > 20:
-        feedback.append("Your mids are weak. Boost 250 Hz - 4 kHz for clarity.")
-    elif mids_diff < -20:
-        feedback.append("Mids are overpowering. Cut 250 Hz - 4 kHz.")
-    if treble_diff > 20:
-        feedback.append("Your treble is low. Add brightness above 4 kHz.")
-    elif treble_diff < -20:
-        feedback.append("Too much treble. Reduce above 4 kHz to avoid harshness.")
-    if stereo_diff_percent > 20:
-        feedback.append("Your mix is narrow. Use stereo widening tools (e.g., panning, reverb).")
-    elif stereo_diff_percent < -20:
-        feedback.append("Your mix is too wide. Tighten it up with less stereo processing.")
-    if target_peak > 0.95 and peak_diff_percent < 0:
-        feedback.append("Your mix is clipping! Lower the master gain to keep peaks below 0 dBFS.")
-    elif peak_diff_percent > 20:
-        feedback.append("Your mix has too much headroom. Increase gain to match the reference’s punch.")
+    # [Add your other feedback logic...]
     
-    # Matchering Processing
+    del target_audio, reference_audio, target_spec, reference_spec
+    logger.info("Cleared audio arrays from memory")
+    
     output_file = os.path.join(OUTPUT_FOLDER, "output.wav")
     results = [mg.pcm24(output_file)]
     mg.process(target=target_file, reference=reference_file, results=results)
+    logger.info(f"Matchering completed, output at {output_file}")
     
-    # Compile results
-    return {
+    results_dict = {
         "rms_diff_percent": rms_diff_percent,
         "bass_diff_percent": bass_diff,
         "mids_diff_percent": mids_diff,
@@ -101,14 +89,19 @@ def analyze_mix(target_file, reference_file):
         "feedback": "\n".join(feedback) if feedback else "Your mix is well-balanced with the reference!",
         "mastered_output": output_file
     }
+    return results_dict
 
-# Web Routes
 @app.route("/", methods=["GET", "POST"])
 def upload():
     if request.method == "POST":
-        # Handle file uploads
+        if "target" not in request.files or "reference" not in request.files:
+            return render_template("upload.html", error="Please upload both files.")
+        
         target = request.files["target"]
         reference = request.files["reference"]
+        
+        if target.filename == "" or reference.filename == "":
+            return render_template("upload.html", error="Please select valid files.")
         
         target_path = os.path.join(UPLOAD_FOLDER, "target.wav")
         reference_path = os.path.join(UPLOAD_FOLDER, "reference.wav")
@@ -116,14 +109,16 @@ def upload():
         target.save(target_path)
         reference.save(reference_path)
         
-        # Run analysis
-        results = analyze_mix(target_path, reference_path)
-        
-        # Clean up uploaded files (optional)
-        os.remove(target_path)
-        os.remove(reference_path)
-        
-        return render_template("results.html", results=results)
+        try:
+            results = analyze_mix(target_path, reference_path)
+            os.remove(target_path)
+            os.remove(reference_path)
+            return render_template("results.html", results=results)
+        except Exception as e:
+            logger.error(f"Error during analysis: {str(e)}")
+            os.remove(target_path)
+            os.remove(reference_path)
+            return render_template("upload.html", error=f"Analysis failed: {str(e)}")
     return render_template("upload.html")
 
 @app.route("/download")
@@ -132,4 +127,4 @@ def download():
     return send_file(output_path, as_attachment=True)
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)  # Local dev only
+    app.run(debug=True, host="0.0.0.0", port=5000)
