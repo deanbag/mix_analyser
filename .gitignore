@@ -18,3 +18,4 @@ git pull origin main  # Resolve conflicts if prompted
 
 # Push
 git push origin main
+.DS_Store

@@ -23,15 +23,20 @@ def analyze_mix(target_file, reference_file):
     if target_size > 2 or ref_size > 2:
         raise ValueError("Files must be under 2 MB each.")
     
-    logger.info("Loading audio files")
+    logger.info("Loading target audio")
     target_audio, sr = librosa.load(target_file, sr=22050, mono=True, duration=10)
-    reference_audio, _ = librosa.load(reference_file, sr=22050, mono=True, duration=10)
-    logger.info(f"Loaded audio: target shape={target_audio.shape}, sr={sr}")
+    logger.info(f"Target audio loaded: shape={target_audio.shape}, sr={sr}")
     
+    logger.info("Loading reference audio")
+    reference_audio, _ = librosa.load(reference_file, sr=22050, mono=True, duration=10)
+    logger.info(f"Reference audio loaded: shape={reference_audio.shape}, sr={sr}")
+    
+    logger.info("Converting to stereo")
     if target_audio.ndim == 1:
         target_audio = np.array([target_audio, target_audio])
     if reference_audio.ndim == 1:
         reference_audio = np.array([reference_audio, reference_audio])
+    logger.info(f"Stereo shapes: target={target_audio.shape}, reference={reference_audio.shape}")
     
     target_rms = np.sqrt(np.mean(target_audio**2))
     reference_rms = np.sqrt(np.mean(reference_audio**2))
@@ -73,7 +78,6 @@ def analyze_mix(target_file, reference_file):
         feedback.append("Your mix is louder than the reference. Reduce gain to avoid distortion.")
     if bass_diff > 20:
         feedback.append("Your mix lacks bass. Boost frequencies around 20-250 Hz.")
-    # [Add your other feedback logic...]
     
     logger.info("Generated feedback")
     del target_audio, reference_audio, target_spec, reference_spec
