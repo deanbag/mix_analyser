@@ -1,0 +1,1 @@
+web: gunicorn mix_analyzer_web:app
