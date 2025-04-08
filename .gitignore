@@ -1,3 +1,20 @@
 *.wav
 uploads/*.wav
 outputs/*.wav
+
+# Stage the intended files
+git add mix_analyzer_web.py
+git add Dockerfile
+
+# Ignore .DS_Store if not already
+echo ".DS_Store" >> .gitignore
+git add .gitignore
+
+# Commit
+git commit -m "Add detailed logging to debug get_call_template error"
+
+# Pull remote changes
+git pull origin main  # Resolve conflicts if prompted
+
+# Push
+git push origin main
