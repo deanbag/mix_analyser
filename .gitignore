@@ -13,6 +13,8 @@ outputs/
 *.wav
 *.mp3
 *.pdf
+static/*.mp3
+static/waveform.png
 
 # macOS system files
 .DS_Store
