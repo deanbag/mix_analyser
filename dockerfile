@@ -1,8 +1,7 @@
-FROM python:3.9-slim
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+FROM python:3.11-slim
+RUN apt-get update && apt-get install -y libsndfile1 ffmpeg gfortran libopenblas-dev liblapack-dev
 WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
 COPY . .
-RUN pip install --no-cache-dir -r requirements.txt
-ENV NUMBA_DISABLE_JIT=1
-EXPOSE 8000
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--timeout", "60", "mix_analyzer_web:app"]
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:8080", "mix_analyzer_web:app"]
