@@ -1,9 +1,20 @@
-__pycache__
+# Python files
+__pycache__/
 *.pyc
-*.pyo
-*.pyd
-.Python
-env/
+
+# Virtual environment
 venv/
-.git
-.gitignore
+
+# Temporary folders
+uploads/
+outputs/
+
+# Temporary files
+*.wav
+*.mp3
+*.pdf
+static/*.mp3
+static/waveform.png
+
+# macOS system files
+.DS_Store
