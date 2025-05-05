@@ -4,5 +4,4 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 COPY . .
-ENV PORT=8080
-CMD ["sh", "-c", "gunicorn -w 4 -b 0.0.0.0:$PORT mix_analyzer_web:app"]
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:8080", "mix_analyzer_web:app"]
